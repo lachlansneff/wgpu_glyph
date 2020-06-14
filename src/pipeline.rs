@@ -138,6 +138,7 @@ impl<Depth> Pipeline<Depth> {
                 size: mem::size_of::<Instance>() as u64
                     * instances.len() as u64,
                 usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
+                mapped_at_creation: false,
             });
 
             self.supported_instances = instances.len();
@@ -191,7 +192,8 @@ fn build<D>(
         mipmap_filter: filter_mode,
         lod_min_clamp: 0.0,
         lod_max_clamp: 0.0,
-        compare: wgpu::CompareFunction::Always,
+        compare: Some(wgpu::CompareFunction::Always),
+        .. Default::default()
     });
 
     let cache = Cache::new(device, cache_width, cache_height);
@@ -204,11 +206,13 @@ fn build<D>(
                     binding: 0,
                     visibility: wgpu::ShaderStage::VERTEX,
                     ty: wgpu::BindingType::UniformBuffer { dynamic: false },
+                    .. Default::default()
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStage::FRAGMENT,
                     ty: wgpu::BindingType::Sampler { comparison: false },
+                    .. Default::default()
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
@@ -218,6 +222,7 @@ fn build<D>(
                         component_type: wgpu::TextureComponentType::Float,
                         multisampled: false,
                     },
+                    .. Default::default()
                 },
             ],
         });
@@ -235,6 +240,7 @@ fn build<D>(
         size: mem::size_of::<Instance>() as u64
             * Instance::INITIAL_AMOUNT as u64,
         usage: wgpu::BufferUsage::VERTEX | wgpu::BufferUsage::COPY_DST,
+        mapped_at_creation: false,
     });
 
     let layout =
@@ -386,7 +392,7 @@ fn draw<D>(
 
     render_pass.set_pipeline(&pipeline.raw);
     render_pass.set_bind_group(0, &pipeline.uniforms, &[]);
-    render_pass.set_vertex_buffer(0, &pipeline.instances, 0, 0);
+    render_pass.set_vertex_buffer(0, pipeline.instances.slice(..));
 
     if let Some(region) = region {
         render_pass.set_scissor_rect(
@@ -413,10 +419,7 @@ fn create_uniforms(
         bindings: &[
             wgpu::Binding {
                 binding: 0,
-                resource: wgpu::BindingResource::Buffer {
-                    buffer: transform,
-                    range: 0..64,
-                },
+                resource: wgpu::BindingResource::Buffer(transform.slice(..64)),
             },
             wgpu::Binding {
                 binding: 1,

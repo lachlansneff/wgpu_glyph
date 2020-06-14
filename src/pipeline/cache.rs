@@ -12,7 +12,6 @@ impl Cache {
                 height,
                 depth: 1,
             },
-            array_layer_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::R8Unorm,
             usage: wgpu::TextureUsage::COPY_DST | wgpu::TextureUsage::SAMPLED,
@@ -39,13 +38,14 @@ impl Cache {
         encoder.copy_buffer_to_texture(
             wgpu::BufferCopyView {
                 buffer: &buffer,
-                offset: 0,
-                bytes_per_row: size[0] as u32,
-                rows_per_image: size[1] as u32,
+                layout: wgpu::TextureDataLayout {
+                    offset: 0,
+                    bytes_per_row: size[0] as u32,
+                    rows_per_image: size[1] as u32,
+                },
             },
             wgpu::TextureCopyView {
                 texture: &self.texture,
-                array_layer: 0,
                 mip_level: 0,
                 origin: wgpu::Origin3d {
                     x: u32::from(offset[0]),

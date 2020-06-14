@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{iter, error::Error};
 use wgpu_glyph::{ab_glyph, GlyphBrushBuilder, Section, Text};
 
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8UnormSrgb;
@@ -14,15 +14,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         .build(&event_loop)
         .unwrap();
 
-    let surface = wgpu::Surface::create(&window);
+    let instance = wgpu::Instance::new();
+
+    let surface = unsafe { instance.create_surface(&window) };
 
     // Initialize GPU
     let (device, queue) = futures::executor::block_on(async {
-        let adapter = wgpu::Adapter::request(
+        let adapter = instance.request_adapter(
             &wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 compatible_surface: Some(&surface),
             },
+            wgpu::UnsafeExtensions::disallow(),
             wgpu::BackendBit::all(),
         )
         .await
@@ -30,20 +33,18 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         adapter
             .request_device(&wgpu::DeviceDescriptor {
-                extensions: wgpu::Extensions {
-                    anisotropic_filtering: false,
-                },
-                limits: wgpu::Limits { max_bind_groups: 1 },
-            })
+                extensions: wgpu::Extensions::empty(),
+                limits: wgpu::Limits { max_bind_groups: 1, ..Default::default() },
+                shader_validation: true,
+            }, None)
             .await
+            .expect("Request device")
     });
 
     let window = winit::window::WindowBuilder::new()
         .with_resizable(false)
         .build(&event_loop)
         .unwrap();
-
-    let surface = wgpu::Surface::create(&window);
 
     // Prepare swap chain and depth buffer
     let mut size = window.inner_size();
@@ -103,7 +104,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                 // Get the next frame
                 let frame =
-                    swap_chain.get_next_texture().expect("Get next frame");
+                    swap_chain.get_next_frame().expect("Get next frame");
 
                 // Clear frame
                 {
@@ -111,7 +112,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         &wgpu::RenderPassDescriptor {
                             color_attachments: &[
                                 wgpu::RenderPassColorAttachmentDescriptor {
-                                    attachment: &frame.view,
+                                    attachment: &frame.output.view,
                                     resolve_target: None,
                                     load_op: wgpu::LoadOp::Clear,
                                     store_op: wgpu::StoreOp::Store,
@@ -162,7 +163,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     .draw_queued(
                         &device,
                         &mut encoder,
-                        &frame.view,
+                        &frame.output.view,
                         wgpu::RenderPassDepthStencilAttachmentDescriptor {
                             attachment: &depth_view,
                             depth_load_op: wgpu::LoadOp::Clear,
@@ -171,13 +172,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                             stencil_store_op: wgpu::StoreOp::Store,
                             clear_depth: -1.0,
                             clear_stencil: 0,
+                            depth_read_only: false,
+                            stencil_read_only: false,
                         },
                         size.width,
                         size.height,
                     )
                     .expect("Draw queued");
 
-                queue.submit(&[encoder.finish()]);
+                queue.submit(iter::once(encoder.finish()));
             }
             _ => {
                 *control_flow = winit::event_loop::ControlFlow::Wait;
@@ -211,7 +214,6 @@ fn create_frame_views(
             height,
             depth: 1,
         },
-        array_layer_count: 1,
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
